@@ -11,9 +11,9 @@ class FaceSegmentor:
         height=720,
         fps=60,
         padding_top=0.4,
-        padding_right=0.2,
-        padding_bottom=0.5,
-        padding_left=0.2,
+        padding_right=0.15,
+        padding_bottom=0.05,
+        padding_left=0.15,
         smooth_buffer=5
     ):
         self.cap = cv2.VideoCapture(0)
