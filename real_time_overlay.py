@@ -53,7 +53,9 @@ class WebcamCapture(threading.Thread):
         self.counter = 0
 
     def run(self):
-        cap = cv2.VideoCapture(0)
+        cap = cv2.VideoCapture(0, cv2.CAP_DSHOW)
+        cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
+        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
         cap.set(cv2.CAP_PROP_FPS, 60)
 
         while self.running:
@@ -108,9 +110,10 @@ def main():
     webcam_thread.start()
 
     detection_buffer = deque(maxlen=5)
-
     output_shape = (1080, 1920, 3)
     green_background = np.full(output_shape, (0, 255, 0), dtype=np.uint8)
+
+    crop_x, crop_y, crop_w, crop_h = 700, 200, 512, 512
 
     with pyvirtualcam.Camera(width=1920, height=1080, fps=60) as cam:
         print(f"OBS virtual camera started at 1920x1080 @ 60fps")
@@ -124,22 +127,24 @@ def main():
             while not quit_flag:
                 screen = np.array(sct.grab(monitor))
                 screen_bgr = cv2.cvtColor(screen, cv2.COLOR_BGRA2BGR)
-                webcam_frame, face_rgba = webcam_thread.get_frames()
-
+                screen_crop = screen_bgr[crop_y:crop_y+crop_h, crop_x:crop_x+crop_w]
+                detection = detector.detect(screen_crop)
                 output_frame = green_background.copy()
 
-                detection = detector.detect(screen_bgr)
-                if detection["found"] and face_rgba is not None:
+                webcam_frame, face_rgba = webcam_thread.get_frames()
+                if detection.get("found") and face_rgba is not None:
+                    detection["top_left"] = (detection["top_left"][0] + crop_x, detection["top_left"][1] + crop_y)
+                    detection["bottom_right"] = (detection["bottom_right"][0] + crop_x, detection["bottom_right"][1] + crop_y)
+                    detection["center"] = (detection["center"][0] + crop_x, detection["center"][1] + crop_y)
                     detection_buffer.append(detection)
                     smoothed = average_bbox(detection_buffer)
+
                     if smoothed:
                         x1, y1 = smoothed["top_left"]
                         x2, y2 = smoothed["bottom_right"]
                         w, h = x2 - x1, y2 - y1
-
                         face_resized = cv2.resize(face_rgba, (w, h), interpolation=cv2.INTER_AREA)
                         output_frame = overlay_rgba(output_frame, face_resized, smoothed["top_left"])
-
                         if debug_mode:
                             cv2.circle(output_frame, smoothed["center"], 4, (0, 255, 255), -1)
                             cv2.putText(output_frame, "FOUND", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
@@ -152,10 +157,20 @@ def main():
                 if elapsed >= 1.0:
                     fps = frame_count / elapsed
                     frame_count = 0
-                    prev_time = nowd
+                    prev_time = now
 
                 if debug_mode:
+                    preview = cv2.resize(screen_crop, (500, 500))
+                    cv2.imshow("Screen Crop", preview)
                     cv2.putText(output_frame, f"FPS: {fps:.1f}", (10, output_shape[0]-20), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
+                    key = cv2.waitKey(1) & 0xFF
+                    if key == 27:
+                        debug_mode = False
+                        cv2.destroyWindow("Screen Crop")
+                    elif key == ord('w'): crop_y = max(0, crop_y - 10)
+                    elif key == ord('s'): crop_y += 10
+                    elif key == ord('a'): crop_x = max(0, crop_x - 10)
+                    elif key == ord('f'): crop_x += 10
 
                 cam.send(cv2.cvtColor(output_frame, cv2.COLOR_BGR2RGB))
                 cam.sleep_until_next_frame()
