@@ -49,13 +49,29 @@ class WebcamCapture(threading.Thread):
         self.frame = None
         self.masked = None
         self.lock = threading.Lock()
+        self.segmentation_interval = 4
+        self.counter = 0
 
     def run(self):
+        cap = cv2.VideoCapture(0)
+        cap.set(cv2.CAP_PROP_FPS, 60)
+
         while self.running:
-            full_frame, masked = self.segmentor.get_segmented_frame()
-            with self.lock:
-                self.frame = full_frame
-                self.masked = masked
+            ret, frame = cap.read()
+            if not ret:
+                continue
+
+            self.counter += 1
+            if self.counter % self.segmentation_interval == 0:
+                full_frame, masked = self.segmentor.process_frame(frame)
+                with self.lock:
+                    self.frame = full_frame
+                    self.masked = masked
+            else:
+                with self.lock:
+                    self.frame = frame
+
+        cap.release()
 
     def get_frames(self):
         with self.lock:
@@ -93,17 +109,17 @@ def main():
 
     detection_buffer = deque(maxlen=5)
 
-    with mss.mss() as sct:
-        monitor = sct.monitors[1]
-        screen_shape = (monitor["height"], monitor["width"], 3)
+    output_shape = (1080, 1920, 3)
+    green_background = np.full(output_shape, (0, 255, 0), dtype=np.uint8)
 
-        green_background = np.full(screen_shape, (0, 255, 0), dtype=np.uint8)
+    with pyvirtualcam.Camera(width=1920, height=1080, fps=60) as cam:
+        print(f"OBS virtual camera started at 1920x1080 @ 60fps")
+        prev_time = time.time()
+        frame_count = 0
+        fps = 0
 
-        with pyvirtualcam.Camera(width=screen_shape[1], height=screen_shape[0], fps=30) as cam:
-            print(f"OBS virtual camera started at {screen_shape[1]}x{screen_shape[0]} @ 30fps")
-            prev_time = time.time()
-            frame_count = 0
-            fps = 0
+        with mss.mss() as sct:
+            monitor = sct.monitors[1]
 
             while not quit_flag:
                 screen = np.array(sct.grab(monitor))
@@ -136,12 +152,12 @@ def main():
                 if elapsed >= 1.0:
                     fps = frame_count / elapsed
                     frame_count = 0
-                    prev_time = now
+                    prev_time = nowd
 
                 if debug_mode:
-                    cv2.putText(output_frame, f"FPS: {fps:.1f}", (10, screen_shape[0]-20), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
+                    cv2.putText(output_frame, f"FPS: {fps:.1f}", (10, output_shape[0]-20), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
 
-                cam.send(output_frame)
+                cam.send(cv2.cvtColor(output_frame, cv2.COLOR_BGR2RGB))
                 cam.sleep_until_next_frame()
 
     webcam_thread.stop()

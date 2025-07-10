@@ -26,6 +26,13 @@ class FaceSegmentor:
             min_detection_confidence=0.6
         )
 
+        self.face_mesh = mp.solutions.face_mesh.FaceMesh(
+            max_num_faces=1,
+            refine_landmarks=True,
+            min_detection_confidence=0.5,
+            min_tracking_confidence=0.5
+        )
+
         self.padding_top = padding_top
         self.padding_right = padding_right
         self.padding_bottom = padding_bottom
@@ -48,7 +55,9 @@ class FaceSegmentor:
         ret, frame = self.cap.read()
         if not ret:
             return None, None
+        return self.process_frame(frame)
 
+    def process_frame(self, frame):
         rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         results = self.face_detection.process(rgb)
 
