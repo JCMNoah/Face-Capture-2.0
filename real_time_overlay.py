@@ -12,33 +12,28 @@ from detection.yolo_detector import YOLODetector
 from segmentation.face_segmentor import FaceSegmentor
 
 def overlay_rgba(base_img, overlay_img, position):
-    """Optimized RGBA overlay function for better performance"""
     x, y = position
     h, w = overlay_img.shape[:2]
 
-    # Bounds checking with early return
-    if (y + h > base_img.shape[0] or x + w > base_img.shape[1] or
-        x < 0 or y < 0 or h <= 0 or w <= 0):
+    # Check bounds
+    if y + h > base_img.shape[0] or x + w > base_img.shape[1]:
         return base_img
 
-    # PERFORMANCE OPTIMIZATION: Use in-place operations and avoid unnecessary copies
-    overlay_rgb = overlay_img[:, :, :3]
-    alpha_mask = overlay_img[:, :, 3]
+    # Split channels
+    overlay_rgb = overlay_img[:, :, :3].astype(np.float32)
+    alpha = overlay_img[:, :, 3].astype(np.float32) / 255.0
+    alpha = np.expand_dims(alpha, axis=2)
 
-    # Avoid division by 255 - use integer operations instead
-    alpha_norm = alpha_mask.astype(np.float32) * (1.0/255.0)
-    inv_alpha = 1.0 - alpha_norm
+    # Region to blend
+    base_region = base_img[y:y+h, x:x+w].astype(np.float32)
 
-    base_region = base_img[y:y+h, x:x+w]
-
-    # PERFORMANCE OPTIMIZATION: Vectorized blending operation
-    for c in range(3):
-        base_img[y:y+h, x:x+w, c] = (
-            overlay_rgb[:, :, c] * alpha_norm +
-            base_region[:, :, c] * inv_alpha
-        ).astype(np.uint8)
+    # Blend and convert back to uint8
+    blended = cv2.addWeighted(overlay_rgb, 1.0, base_region, 0.0, 0)  # start with overlay
+    blended = overlay_rgb * alpha + base_region * (1 - alpha)
+    base_img[y:y+h, x:x+w] = blended.astype(np.uint8)
 
     return base_img
+
 
 def average_bbox(buffer):
     if not buffer:
@@ -78,12 +73,12 @@ class WebcamCapture(threading.Thread):
         cap.set(cv2.CAP_PROP_FPS, 60)
         cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)  # Minimize latency
 
-        # Simple camera settings - avoid black and white issues
+        # Simple camera settings - try minimal approach for color
         cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc('M', 'J', 'P', 'G'))  # Use MJPEG
 
-        # Reset camera properties to defaults to avoid black and white
-        cap.set(cv2.CAP_PROP_AUTO_EXPOSURE, 0.25)  # Auto exposure
-        cap.set(cv2.CAP_PROP_AUTOFOCUS, 0)  # Disable autofocus for performance
+        # Try basic auto settings
+        cap.set(cv2.CAP_PROP_AUTO_EXPOSURE, 0.75)  # Enable auto exposure
+        cap.set(cv2.CAP_PROP_AUTOFOCUS, 1)  # Enable autofocus
 
         print("✅ Camera initialized with default color settings")
 
@@ -304,19 +299,37 @@ def main():
                     prev_time = now
 
                 if debug_mode:
-                    # Only capture screen crop for debug when needed
+                    # Show multiple debug windows to diagnose the issue
+
+                    # 1. Screen crop (game region)
                     if detection_counter % detection_interval == 0:
                         screen_crop_raw = np.array(sct.grab(crop_monitor))
                         screen_crop = cv2.cvtColor(screen_crop_raw, cv2.COLOR_BGRA2BGR)
-                        preview = cv2.resize(screen_crop, (500, 500))
-                        cv2.imshow("Screen Crop", preview)
+                        preview = cv2.resize(screen_crop, (400, 400))
+                        cv2.imshow("1. Screen Crop", preview)
+
+                    # 2. Raw camera feed
+                    if webcam_frame is not None:
+                        camera_preview = cv2.resize(webcam_frame, (400, 300))
+                        cv2.imshow("2. Raw Camera Feed", camera_preview)
+
+                    # 3. Segmented face (if available)
+                    if face_rgba is not None:
+                        face_preview = cv2.resize(face_rgba, (200, 200))
+                        # Convert RGBA to BGR for display
+                        face_bgr = cv2.cvtColor(face_preview, cv2.COLOR_RGBA2BGR)
+                        cv2.imshow("3. Segmented Face", face_bgr)
+
+                    # 4. Final virtual camera output
+                    output_preview = cv2.resize(output_frame, (400, 400))
+                    cv2.imshow("4. Virtual Camera Output", output_preview)
 
                     # Adjust text position for smaller output
                     cv2.putText(output_frame, f"FPS: {fps:.1f}", (10, output_height-20), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 2)
                     key = cv2.waitKey(1) & 0xFF
                     if key == 27:
                         debug_mode = False
-                        cv2.destroyWindow("Screen Crop")
+                        cv2.destroyAllWindows()
                     elif key == ord('w'):
                         crop_y = max(0, crop_y - 10)
                         crop_monitor["top"] = monitor["top"] + crop_y
