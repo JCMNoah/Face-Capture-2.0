@@ -1,4 +1,4 @@
-yolo_dataset/images/train/snap_002.jpg
+yolo_dataset/*
 yolo_dataset/images/train/snap_003.jpg
 yolo_dataset/images/train/snap_004.jpg
 yolo_dataset/images/train/snap_006.jpg
@@ -60,7 +60,7 @@ yolo_dataset/labels/val/snap_015.txt
 yolo_dataset/labels/val/snap_016.txt
 yolo_dataset/labels/val/snap_018.txt
 yolo_dataset/labels/val/snap_023.txt
-runs/detect/train/args.yaml
+runs/*
 runs/detect/train2/args.yaml
 runs/detect/train3/args.yaml
 runs/detect/train4/args.yaml
@@ -156,8 +156,8 @@ yolo_dataset/labels/train/snap_063.txt
 yolo_dataset/labels/train/snap_064.txt
 yolo_dataset/labels/train/snap_065.txt
 yolo_dataset/labels/train/snap_066.txt
-detection/yolo_detector.py
-detection/__pycache__/yolo_detector.cpython-311.pyc
+detection/__pycache__/*
+segmentation/__pycache__/*
 runs/detect/predict/template_screenshot.jpg
 runs/detect/train5/args.yaml
 runs/detect/train6/args.yaml
